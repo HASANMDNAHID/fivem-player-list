@@ -2,6 +2,7 @@ import { setServerInfo, setTitle } from './server.js';
 import { getDiscordId, getSteamId } from './utils/user.js';
 import { getFiveMId } from './utils/user.js';
 import { getPlayerAvatarUrl } from './utils/user.js';
+import { getPlayerAvatarCandidates } from './utils/user.js';
 import { isSearching, searchPlayers, checkPendingSearch } from './search.js';
 import { API_BASE_URL, DEFAULT_HEADERS } from './utils/constants.js';
 import { updateActivePlayers, isPlayerFavorite } from './favorites.js';
@@ -173,6 +174,10 @@ const formatPlayers = (players) => {
 		}
 
 		formattedPlayer.joinTimestamp = playerJoinTimes.get(playerKey);
+		if (!formattedPlayer.joinTimestamp) {
+			formattedPlayer.joinTimestamp = now;
+			playerJoinTimes.set(playerKey, now);
+		}
 		formattedPlayers.push(formattedPlayer);
 	});
 
@@ -232,16 +237,19 @@ const updateRenderedJoinTimes = () => {
 		const key = row.getAttribute('data-player-key');
 		if (!key) return;
 
-		const startedAt = playerJoinTimes.get(key);
-		if (!startedAt) return;
+		let startedAt = playerJoinTimes.get(key);
+		if (!startedAt) {
+			startedAt = Date.now();
+			playerJoinTimes.set(key, startedAt);
+		}
 
 		const joinCell = row.querySelector('.table-join-time');
 		if (!joinCell) return;
 
-		if (!startedAt) return;
-
 		joinCell.textContent = formatJoinDuration(Date.now() - startedAt);
 	});
+
+	saveJoinTimesForServer();
 };
 
 const startJoinTimer = () => {
@@ -293,6 +301,13 @@ export const renderPlayers = (players, search = false) => {
 		star.appendChild(starImg);
 
 		const avatarImg = document.createElement('img');
+		const avatarCandidates = getPlayerAvatarCandidates({
+			name: player.name,
+			socials: {
+				...player.socials,
+				avatarUrl: player.avatarUrl,
+			},
+		});
 		avatarImg.src = getPlayerAvatarUrl({
 			name: player.name,
 			socials: {
@@ -304,8 +319,13 @@ export const renderPlayers = (players, search = false) => {
 		avatarImg.loading = 'lazy';
 		avatarImg.referrerPolicy = 'no-referrer';
 		avatarImg.onerror = () => {
-			avatarImg.onerror = null;
-			avatarImg.src = `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(player.name)}`;
+			avatarCandidates.shift();
+			if (avatarCandidates.length < 1) {
+				avatarImg.onerror = null;
+				return;
+			}
+
+			avatarImg.src = avatarCandidates[0];
 		};
 		avatar.appendChild(avatarImg);
 

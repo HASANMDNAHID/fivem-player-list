@@ -1,8 +1,8 @@
 import { STORAGE_KEYS } from './utils/constants.js';
 import { fetchServer } from './fetch.js';
 import { showNotification } from './notifications.js';
-import { getSteamId, getDiscordId } from './utils/user.js';
 import { getPlayerAvatarUrl } from './utils/user.js';
+import { getPlayerAvatarCandidates } from './utils/user.js';
 
 let favorites = [];
 let activePlayerKeys = new Set();
@@ -274,13 +274,19 @@ export const renderFavoritePlayers = () => {
 		if (player.key.startsWith('steam:')) socialsFromKey.steam = player.key.slice('steam:'.length);
 		if (player.key.startsWith('discord:')) socialsFromKey.discord = player.key.slice('discord:'.length);
 		const avatarImg = document.createElement('img');
+		const avatarCandidates = getPlayerAvatarCandidates({ name: player.name, socials: socialsFromKey });
 		avatarImg.src = getPlayerAvatarUrl({ name: player.name, socials: socialsFromKey });
 		avatarImg.alt = `${player.name} avatar`;
 		avatarImg.loading = 'lazy';
 		avatarImg.referrerPolicy = 'no-referrer';
 		avatarImg.onerror = () => {
-			avatarImg.onerror = null;
-			avatarImg.src = `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(player.name)}`;
+			avatarCandidates.shift();
+			if (avatarCandidates.length < 1) {
+				avatarImg.onerror = null;
+				return;
+			}
+
+			avatarImg.src = avatarCandidates[0];
 		};
 		avatar.appendChild(avatarImg);
 

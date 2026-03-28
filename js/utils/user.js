@@ -37,15 +37,26 @@ const getIdentifierValue = (ids, prefix) => {
 export const getSteamId = (ids) => {
 	const rawSteamId = getIdentifierValue(ids, 'steam');
 	if (!rawSteamId) return;
+	const normalized = rawSteamId.replace(/^0x/i, '').trim();
 
-	// Some APIs expose steam in hex (110000...) and others in decimal (7656119...).
-	if (/^[0-9]+$/.test(rawSteamId)) {
-		return rawSteamId;
+	// Common case: already SteamID64 decimal.
+	if (/^7656119[0-9]+$/.test(normalized)) {
+		return normalized;
 	}
 
-	const hexSteamId = rawSteamId.replace(/^0x/i, '');
-	if (/^[0-9a-fA-F]+$/.test(hexSteamId)) {
-		return hexToDecimal(hexSteamId);
+	// FiveM often exposes steam hex without letters (e.g. 1100001...).
+	if (/^1100001[0-9a-fA-F]*$/i.test(normalized)) {
+		return hexToDecimal(normalized);
+	}
+
+	// Generic hex fallback.
+	if (/^[0-9a-fA-F]+$/.test(normalized)) {
+		return hexToDecimal(normalized);
+	}
+
+	// Fallback: keep numeric input unchanged.
+	if (/^[0-9]+$/.test(normalized)) {
+		return normalized;
 	}
 };
 
@@ -85,22 +96,33 @@ export const hexToDecimal = (s) => {
 
 const encodeSeed = (value) => encodeURIComponent(value || 'Unknown');
 
-export const getPlayerAvatarUrl = ({ name, socials = {} } = {}) => {
+export const getPlayerAvatarCandidates = ({ name, socials = {} } = {}) => {
+	const candidates = [];
+	const pushCandidate = (value) => {
+		if (typeof value !== 'string' || value.length < 1) return;
+		if (!candidates.includes(value)) candidates.push(value);
+	};
+
 	if (typeof socials.avatarUrl === 'string' && socials.avatarUrl.length > 0) {
-		return socials.avatarUrl;
+		pushCandidate(socials.avatarUrl);
 	}
 
 	if (socials.fivem) {
-		return `https://unavatar.io/fivem/${socials.fivem}`;
+		pushCandidate(`https://unavatar.io/fivem/${socials.fivem}`);
 	}
 
 	if (socials.steam) {
-		return `https://unavatar.io/steam/${socials.steam}`;
+		pushCandidate(`https://unavatar.io/steam/${socials.steam}`);
 	}
 
 	if (socials.discord) {
-		return `https://unavatar.io/discord/${socials.discord}`;
+		pushCandidate(`https://unavatar.io/discord/${socials.discord}`);
 	}
 
-	return `https://api.dicebear.com/9.x/initials/svg?seed=${encodeSeed(name)}`;
+	pushCandidate(`https://api.dicebear.com/9.x/initials/svg?seed=${encodeSeed(name)}`);
+	return candidates;
+};
+
+export const getPlayerAvatarUrl = ({ name, socials = {} } = {}) => {
+	return getPlayerAvatarCandidates({ name, socials })[0];
 };
