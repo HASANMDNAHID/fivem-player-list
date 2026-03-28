@@ -1,5 +1,6 @@
 import { setServerInfo, setTitle } from './server.js';
 import { getDiscordId, getSteamId } from './utils/user.js';
+import { getFiveMId } from './utils/user.js';
 import { getPlayerAvatarUrl } from './utils/user.js';
 import { isSearching, searchPlayers, checkPendingSearch } from './search.js';
 import { API_BASE_URL, DEFAULT_HEADERS } from './utils/constants.js';
@@ -15,6 +16,9 @@ let currentPlayers;
 let fetcher;
 let seconds = 30;
 const playerJoinTimes = new Map();
+let joinTimer;
+let hasCapturedInitialSnapshot = false;
+let activeServerId;
 
 export const getPlayers = () => currentPlayers;
 
@@ -23,6 +27,13 @@ export const fetchServer = (serverId) => {
 		if (!isValidServerId(serverId)) {
 			showNotification('Invalid server ID format', 'error');
 			return;
+		}
+
+		if (activeServerId !== serverId) {
+			activeServerId = serverId;
+			playerJoinTimes.clear();
+			hasCapturedInitialSnapshot = false;
+			currentPlayers = undefined;
 		}
 
 		setTitle('Loading server data from FiveM API...');
@@ -106,10 +117,14 @@ const formatPlayers = (players) => {
 	const formattedPlayers = [];
 	const activeKeys = new Set();
 	const now = Date.now();
+	const isFirstSnapshot = !hasCapturedInitialSnapshot;
 	players.forEach((player) => {
 		const socials = {};
 
 		if (player.identifiers) {
+			const fiveMIdentifier = getFiveMId(player.identifiers);
+			if (fiveMIdentifier) socials.fivem = fiveMIdentifier;
+
 			const steamIdentifier = getSteamId(player.identifiers);
 			if (steamIdentifier) socials.steam = steamIdentifier;
 
@@ -128,7 +143,14 @@ const formatPlayers = (players) => {
 		activeKeys.add(playerKey);
 
 		if (!playerJoinTimes.has(playerKey)) {
-			playerJoinTimes.set(playerKey, now);
+			const joinedAt = getJoinTimestampFromPlayer(player);
+			if (joinedAt) {
+				playerJoinTimes.set(playerKey, joinedAt);
+			} else if (isFirstSnapshot) {
+				playerJoinTimes.set(playerKey, null);
+			} else {
+				playerJoinTimes.set(playerKey, now);
+			}
 		}
 
 		formattedPlayer.joinTimestamp = playerJoinTimes.get(playerKey);
@@ -141,6 +163,8 @@ const formatPlayers = (players) => {
 		}
 	}
 
+	hasCapturedInitialSnapshot = true;
+
 	return formattedPlayers.sort((a, b) => a.id - b.id);
 };
 
@@ -150,6 +174,69 @@ const resetTable = () => {
 
 const STEAM_LINK = 'https://steamcommunity.com/profiles/%id%';
 const DISCORD_LINK = 'https://discord.com/users/%id%';
+
+const getJoinTimestampFromPlayer = (player) => {
+	if (!player || typeof player !== 'object') return;
+
+	const candidateKeys = ['joinedAt', 'joined_at', 'joinTime', 'join_time', 'connectedAt', 'connected_at', 'joined'];
+	for (const key of candidateKeys) {
+		const raw = player[key];
+		const parsed = parseJoinTimestamp(raw);
+		if (parsed) return parsed;
+	}
+};
+
+const parseJoinTimestamp = (raw) => {
+	if (!raw) return;
+
+	if (typeof raw === 'number' && Number.isFinite(raw)) {
+		if (raw > 9999999999) return raw;
+		if (raw > 1000000000) return raw * 1000;
+		return;
+	}
+
+	if (typeof raw === 'string') {
+		const numeric = Number(raw);
+		if (Number.isFinite(numeric) && numeric > 0) {
+			if (numeric > 9999999999) return numeric;
+			if (numeric > 1000000000) return numeric * 1000;
+		}
+
+		const dateMs = Date.parse(raw);
+		if (!Number.isNaN(dateMs)) return dateMs;
+	}
+};
+
+const updateRenderedJoinTimes = () => {
+	const rows = table.querySelectorAll('tr[data-player-key]');
+	rows.forEach((row) => {
+		const key = row.getAttribute('data-player-key');
+		if (!key) return;
+
+		const startedAt = playerJoinTimes.get(key);
+		if (!startedAt) return;
+
+		const joinCell = row.querySelector('.table-join-time');
+		if (!joinCell) return;
+
+		if (!startedAt) {
+			joinCell.textContent = '-';
+			return;
+		}
+
+		joinCell.textContent = formatJoinDuration(Date.now() - startedAt);
+	});
+};
+
+const startJoinTimer = () => {
+	if (joinTimer) {
+		clearInterval(joinTimer);
+	}
+
+	joinTimer = setInterval(() => {
+		updateRenderedJoinTimes();
+	}, 1000);
+};
 
 export const renderPlayers = (players, search = false) => {
 	resetTable();
@@ -202,7 +289,7 @@ export const renderPlayers = (players, search = false) => {
 
 		id.textContent = player.id;
 		name.textContent = player.name;
-		joinTime.textContent = formatJoinDuration(Date.now() - player.joinTimestamp);
+		joinTime.textContent = player.joinTimestamp ? formatJoinDuration(Date.now() - player.joinTimestamp) : '-';
 		ping.textContent = `${player.ping}ms`;
 
 		if (player.socials.steam) {
@@ -269,6 +356,9 @@ export const renderPlayers = (players, search = false) => {
 	footerTd.appendChild(span2);
 	footerTr.appendChild(footerTd);
 	table.appendChild(footerTr);
+
+	updateRenderedJoinTimes();
+	startJoinTimer();
 
 	if (isSearching() && !search) searchPlayers();
 };

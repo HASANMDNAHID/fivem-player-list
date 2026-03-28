@@ -8,6 +8,7 @@ let favorites = [];
 let activePlayerKeys = new Set();
 
 export const getPlayerKey = (player) => {
+	if (player.socials && player.socials.fivem) return `fivem:${player.socials.fivem}`;
 	if (player.socials && player.socials.steam) return `steam:${player.socials.steam}`;
 	if (player.socials && player.socials.discord) return `discord:${player.socials.discord}`;
 	return `name:${player.name}`;
@@ -269,6 +270,7 @@ export const renderFavoritePlayers = () => {
 		star.appendChild(starImg);
 
 		const socialsFromKey = {};
+		if (player.key.startsWith('fivem:')) socialsFromKey.fivem = player.key.slice('fivem:'.length);
 		if (player.key.startsWith('steam:')) socialsFromKey.steam = player.key.slice('steam:'.length);
 		if (player.key.startsWith('discord:')) socialsFromKey.discord = player.key.slice('discord:'.length);
 		const avatarImg = document.createElement('img');

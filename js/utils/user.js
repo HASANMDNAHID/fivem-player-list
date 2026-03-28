@@ -56,6 +56,13 @@ export const getDiscordId = (ids) => {
 	return rawDiscordId;
 };
 
+export const getFiveMId = (ids) => {
+	const rawFiveMId = getIdentifierValue(ids, 'fivem') || getIdentifierValue(ids, 'cfx');
+	if (!rawFiveMId) return;
+
+	return rawFiveMId;
+};
+
 export const hexToDecimal = (s) => {
 	var i,
 		j,
@@ -79,12 +86,16 @@ export const hexToDecimal = (s) => {
 const encodeSeed = (value) => encodeURIComponent(value || 'Unknown');
 
 export const getPlayerAvatarUrl = ({ name, socials = {} } = {}) => {
-	if (socials.discord) {
-		return `https://unavatar.io/discord/${socials.discord}`;
+	if (socials.fivem) {
+		return `https://unavatar.io/fivem/${socials.fivem}`;
 	}
 
 	if (socials.steam) {
 		return `https://unavatar.io/steam/${socials.steam}`;
+	}
+
+	if (socials.discord) {
+		return `https://unavatar.io/discord/${socials.discord}`;
 	}
 
 	return `https://api.dicebear.com/9.x/initials/svg?seed=${encodeSeed(name)}`;
