@@ -95,6 +95,7 @@ export const hexToDecimal = (s) => {
 };
 
 const encodeSeed = (value) => encodeURIComponent(value || 'Unknown');
+const normalizeFivemId = (value) => String(value || '').trim().replace(/^fivem:/i, '').replace(/^cfx:/i, '');
 
 export const getPlayerAvatarCandidates = ({ name, socials = {} } = {}) => {
 	const candidates = [];
@@ -108,7 +109,13 @@ export const getPlayerAvatarCandidates = ({ name, socials = {} } = {}) => {
 	}
 
 	if (socials.fivem) {
-		pushCandidate(`https://unavatar.io/fivem/${socials.fivem}`);
+		const fivemId = normalizeFivemId(socials.fivem);
+		if (fivemId.length > 0) {
+			// Multiple FiveM/Cfx avatar hosts are tried because availability differs by account.
+			pushCandidate(`https://avatar.cfx.re/${encodeURIComponent(fivemId)}`);
+			pushCandidate(`https://avatars.fivem.net/${encodeURIComponent(fivemId)}`);
+			pushCandidate(`https://unavatar.io/fivem/${encodeURIComponent(fivemId)}`);
+		}
 	}
 
 	if (socials.steam) {
