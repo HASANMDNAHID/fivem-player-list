@@ -17,7 +17,6 @@ let fetcher;
 let seconds = 30;
 const playerJoinTimes = new Map();
 let joinTimer;
-let hasCapturedInitialSnapshot = false;
 let activeServerId;
 
 export const getPlayers = () => currentPlayers;
@@ -32,7 +31,7 @@ export const fetchServer = (serverId) => {
 		if (activeServerId !== serverId) {
 			activeServerId = serverId;
 			playerJoinTimes.clear();
-			hasCapturedInitialSnapshot = false;
+			loadJoinTimesForServer(serverId);
 			currentPlayers = undefined;
 		}
 
@@ -117,26 +116,48 @@ const formatPlayers = (players) => {
 	const formattedPlayers = [];
 	const activeKeys = new Set();
 	const now = Date.now();
-	const isFirstSnapshot = !hasCapturedInitialSnapshot;
 	players.forEach((player) => {
 		const socials = {};
+		const directIdentifiers = [];
 
-		if (player.identifiers) {
-			const fiveMIdentifier = getFiveMId(player.identifiers);
+		if (player.steam) directIdentifiers.push(`steam:${String(player.steam)}`);
+		if (player.steamId) directIdentifiers.push(`steam:${String(player.steamId)}`);
+		if (player.discord) directIdentifiers.push(`discord:${String(player.discord)}`);
+		if (player.discordId) directIdentifiers.push(`discord:${String(player.discordId)}`);
+		if (player.fivem) directIdentifiers.push(`fivem:${String(player.fivem)}`);
+		if (player.fivemId) directIdentifiers.push(`fivem:${String(player.fivemId)}`);
+		if (player.cfxId) directIdentifiers.push(`fivem:${String(player.cfxId)}`);
+
+		const mergedIdentifiers = [
+			...(Array.isArray(player.identifiers) ? player.identifiers : []),
+			...directIdentifiers,
+		];
+
+		if (mergedIdentifiers.length > 0) {
+			const fiveMIdentifier = getFiveMId(mergedIdentifiers);
 			if (fiveMIdentifier) socials.fivem = fiveMIdentifier;
 
-			const steamIdentifier = getSteamId(player.identifiers);
+			const steamIdentifier = getSteamId(mergedIdentifiers);
 			if (steamIdentifier) socials.steam = steamIdentifier;
 
-			const discordIdentifier = getDiscordId(player.identifiers);
+			const discordIdentifier = getDiscordId(mergedIdentifiers);
 			if (discordIdentifier) socials.discord = discordIdentifier;
 		}
+
+		const rawAvatarUrl =
+			player.avatar ||
+			player.avatarUrl ||
+			player.avatar_url ||
+			player.profileImage ||
+			player.profile_image ||
+			(player.profile && (player.profile.avatar || player.profile.avatarUrl || player.profile.image));
 
 		const formattedPlayer = {
 			name: player.name,
 			id: player.id,
 			socials,
 			ping: player.ping,
+			avatarUrl: typeof rawAvatarUrl === 'string' ? rawAvatarUrl : undefined,
 		};
 
 		const playerKey = getPlayerKey(formattedPlayer);
@@ -146,8 +167,6 @@ const formatPlayers = (players) => {
 			const joinedAt = getJoinTimestampFromPlayer(player);
 			if (joinedAt) {
 				playerJoinTimes.set(playerKey, joinedAt);
-			} else if (isFirstSnapshot) {
-				playerJoinTimes.set(playerKey, null);
 			} else {
 				playerJoinTimes.set(playerKey, now);
 			}
@@ -163,7 +182,7 @@ const formatPlayers = (players) => {
 		}
 	}
 
-	hasCapturedInitialSnapshot = true;
+	saveJoinTimesForServer();
 
 	return formattedPlayers.sort((a, b) => a.id - b.id);
 };
@@ -219,10 +238,7 @@ const updateRenderedJoinTimes = () => {
 		const joinCell = row.querySelector('.table-join-time');
 		if (!joinCell) return;
 
-		if (!startedAt) {
-			joinCell.textContent = '-';
-			return;
-		}
+		if (!startedAt) return;
 
 		joinCell.textContent = formatJoinDuration(Date.now() - startedAt);
 	});
@@ -277,7 +293,13 @@ export const renderPlayers = (players, search = false) => {
 		star.appendChild(starImg);
 
 		const avatarImg = document.createElement('img');
-		avatarImg.src = getPlayerAvatarUrl(player);
+		avatarImg.src = getPlayerAvatarUrl({
+			name: player.name,
+			socials: {
+				...player.socials,
+				avatarUrl: player.avatarUrl,
+			},
+		});
 		avatarImg.alt = `${player.name} avatar`;
 		avatarImg.loading = 'lazy';
 		avatarImg.referrerPolicy = 'no-referrer';
@@ -289,7 +311,7 @@ export const renderPlayers = (players, search = false) => {
 
 		id.textContent = player.id;
 		name.textContent = player.name;
-		joinTime.textContent = player.joinTimestamp ? formatJoinDuration(Date.now() - player.joinTimestamp) : '-';
+		joinTime.textContent = formatJoinDuration(Date.now() - player.joinTimestamp);
 		ping.textContent = `${player.ping}ms`;
 
 		if (player.socials.steam) {
@@ -365,6 +387,44 @@ export const renderPlayers = (players, search = false) => {
 
 const isValidServerId = (serverId) => {
 	return typeof serverId === 'string' && /^[a-zA-Z0-9]+$/.test(serverId);
+};
+
+const getJoinTimesStorageKey = () => {
+	if (!activeServerId) return;
+	return `joinTimes:${activeServerId}`;
+};
+
+const loadJoinTimesForServer = (serverId) => {
+	const storageKey = `joinTimes:${serverId}`;
+	const raw = localStorage.getItem(storageKey);
+	if (!raw) return;
+
+	try {
+		const parsed = JSON.parse(raw);
+		if (!parsed || typeof parsed !== 'object') return;
+
+		for (const [key, value] of Object.entries(parsed)) {
+			if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+				playerJoinTimes.set(key, value);
+			}
+		}
+	} catch (error) {
+		console.warn('Failed to parse join time cache', error);
+	}
+};
+
+const saveJoinTimesForServer = () => {
+	const storageKey = getJoinTimesStorageKey();
+	if (!storageKey) return;
+
+	const serialized = {};
+	for (const [key, value] of playerJoinTimes.entries()) {
+		if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+			serialized[key] = value;
+		}
+	}
+
+	localStorage.setItem(storageKey, JSON.stringify(serialized));
 };
 
 const formatJoinDuration = (elapsedMs) => {

@@ -86,6 +86,10 @@ export const hexToDecimal = (s) => {
 const encodeSeed = (value) => encodeURIComponent(value || 'Unknown');
 
 export const getPlayerAvatarUrl = ({ name, socials = {} } = {}) => {
+	if (typeof socials.avatarUrl === 'string' && socials.avatarUrl.length > 0) {
+		return socials.avatarUrl;
+	}
+
 	if (socials.fivem) {
 		return `https://unavatar.io/fivem/${socials.fivem}`;
 	}
