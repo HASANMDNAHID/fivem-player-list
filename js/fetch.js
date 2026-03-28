@@ -129,19 +129,19 @@ const formatPlayers = (players) => {
 		if (player.fivemId) directIdentifiers.push(`fivem:${String(player.fivemId)}`);
 		if (player.cfxId) directIdentifiers.push(`fivem:${String(player.cfxId)}`);
 
-		const mergedIdentifiers = [
-			...(Array.isArray(player.identifiers) ? player.identifiers : []),
-			...directIdentifiers,
-		];
+		const identifiersSource =
+			directIdentifiers.length > 0
+				? [player.identifiers, ...directIdentifiers].filter(Boolean)
+				: player.identifiers;
 
-		if (mergedIdentifiers.length > 0) {
-			const fiveMIdentifier = getFiveMId(mergedIdentifiers);
+		if (identifiersSource) {
+			const fiveMIdentifier = getFiveMId(identifiersSource);
 			if (fiveMIdentifier) socials.fivem = fiveMIdentifier;
 
-			const steamIdentifier = getSteamId(mergedIdentifiers);
+			const steamIdentifier = getSteamId(identifiersSource);
 			if (steamIdentifier) socials.steam = steamIdentifier;
 
-			const discordIdentifier = getDiscordId(mergedIdentifiers);
+			const discordIdentifier = getDiscordId(identifiersSource);
 			if (discordIdentifier) socials.discord = discordIdentifier;
 		}
 
@@ -331,7 +331,8 @@ export const renderPlayers = (players, search = false) => {
 
 		id.textContent = player.id;
 		name.textContent = player.name;
-		joinTime.textContent = formatJoinDuration(Date.now() - player.joinTimestamp);
+		const startedAt = Number(player.joinTimestamp) || Date.now();
+		joinTime.textContent = formatJoinDuration(Date.now() - startedAt);
 		ping.textContent = `${player.ping}ms`;
 
 		if (player.socials.steam) {
